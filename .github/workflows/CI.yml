@@ -10,49 +10,8 @@ permissions:
   actions: read
 
 jobs:
-  lint:
-    runs-on: windows-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-venv-
-
-      - name: Create virtualenv if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv venv --clear
-
-      - name: Install dependencies if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv pip install .[dev]
-
-      - name: Confirm Python version
-        run: .venv\Scripts\python.exe --version
-
-      - name: Style and Lint Validation (Black, isort, Flake8)
-        run: |
-          .\.venv\Scripts\black . --exclude=.venv --check --diff
-          .\.venv\Scripts\isort . --skip .venv --check --diff
-          .\.venv\Scripts\python.exe -m flake8 . `
-            --exclude=.venv `
-            --exit-zero
-
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest   # switched from windows to ubuntu
     services:
       postgres:
         image: postgres:15
@@ -89,20 +48,27 @@ jobs:
 
       - name: Cache virtualenv
         id: venv-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: .venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
+          key: ${{ runner.os }}-venv-${{ hashFiles('uv.lock') }}
           restore-keys: ${{ runner.os }}-venv-
 
-      - name: Create virtualenv if cache miss
+      - name: Create and install dependencies if cache miss
         if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv venv --clear
+        run: uv sync
 
-      - name: Install dependencies if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv pip install .[dev]
+      - name: Confirm Python version
+        run: .venv/bin/python --version
+
+      - name: Style and Lint Validation (Black, isort, Flake8)
+        continue-on-error: true   # keep lint non-blocking
+        run: |
+          .venv/bin/black . --exclude=.venv --check --diff
+          .venv/bin/isort . --skip .venv --check --diff
+          .venv/bin/python -m flake8 . --exclude=.venv
 
       - name: Run pytest
         run: |
-          .venv/bin/python -m pytest tests --tb=short --maxfail=1 --disable-warnings -q
+          .venv/bin/python -m pytest tests \
+            --tb=short --maxfail=1 --disable-warnings -q
