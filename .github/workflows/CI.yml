@@ -2,56 +2,16 @@
 name: CI
 
 on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main, develop]
+  push: {}
+  pull_request: {}
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  lint:
-    runs-on: windows-latest
-    continue-on-error: true   # <-- allows lint job to fail without failing workflow
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install uv
-        run: pip install uv
-
-      - name: Cache virtualenv
-        id: venv-cache
-        uses: actions/cache@v5
-        with:
-          path: .venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
-          restore-keys: ${{ runner.os }}-venv-
-
-      - name: Create virtualenv
-        run: uv venv --clear
-
-      - name: Install dependencies
-        run: uv pip install .[dev] --upgrade
-
-      - name: Confirm Python version
-        run: uv run python --version
-
-      - name: Style and Lint Validation (Black, isort, Flake8)
-        run: |
-          uv run black . --exclude=.venv --check --diff
-          uv run isort . --skip .venv --check --diff
-          uv run flake8 . --exclude=.venv
-
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: ubuntu-latest   # switched from windows to ubuntu
     services:
       postgres:
         image: postgres:15
@@ -91,14 +51,24 @@ jobs:
         uses: actions/cache@v5
         with:
           path: .venv
-          key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
+          key: ${{ runner.os }}-venv-${{ hashFiles('uv.lock') }}
           restore-keys: ${{ runner.os }}-venv-
 
-      - name: Create virtualenv
-        run: uv venv --clear
+      - name: Create and install dependencies if cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
+        run: uv sync
 
-      - name: Install dependencies
-        run: uv pip install .[dev] --upgrade
+      - name: Confirm Python version
+        run: .venv/bin/python --version
+
+      - name: Style and Lint Validation (Black, isort, Flake8)
+        continue-on-error: true   # keep lint non-blocking
+        run: |
+          .venv/bin/black . --exclude=.venv --check --diff
+          .venv/bin/isort . --skip .venv --check --diff
+          .venv/bin/python -m flake8 . --exclude=.venv
 
       - name: Run pytest
-        run: uv run pytest tests --tb=short --maxfail=1 --disable-warnings -q
+        run: |
+          .venv/bin/python -m pytest tests \
+            --tb=short --maxfail=1 --disable-warnings -q
