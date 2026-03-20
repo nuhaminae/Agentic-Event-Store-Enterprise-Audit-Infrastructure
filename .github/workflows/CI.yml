@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: ubuntu-latest   # switched from windows to ubuntu
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:15
@@ -33,7 +33,7 @@ jobs:
       POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-
+      PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}   # <-- ensures psql uses password
 
     steps:
       - name: Checkout repository
@@ -63,11 +63,18 @@ jobs:
         run: .venv/bin/python --version
 
       - name: Style and Lint Validation (Black, isort, Flake8)
-        continue-on-error: true   # keep lint non-blocking
+        continue-on-error: true
         run: |
           .venv/bin/black . --exclude=.venv --check --diff
           .venv/bin/isort . --skip .venv --check --diff
           .venv/bin/python -m flake8 . --exclude=.venv
+
+      - name: Install Postgres client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Initialize schema
+        run: |
+          psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -f src/schema.sql
 
       - name: Run pytest
         run: |
