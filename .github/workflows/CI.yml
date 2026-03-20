@@ -10,7 +10,7 @@ permissions:
   actions: read
 
 jobs:
-  build:
+  lint:
     runs-on: windows-latest
     steps:
       - name: Checkout repository
@@ -51,7 +51,58 @@ jobs:
             --exclude=.venv `
             --exit-zero
 
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U ${{ secrets.POSTGRES_USER }}"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+      POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: 5432
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        run: pip install uv
+
+      - name: Cache virtualenv
+        id: venv-cache
+        uses: actions/cache@v3
+        with:
+          path: .venv
+          key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
+          restore-keys: ${{ runner.os }}-venv-
+
+      - name: Create virtualenv if cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
+        run: uv venv --clear
+
+      - name: Install dependencies if cache miss
+        if: steps.venv-cache.outputs.cache-hit != 'true'
+        run: uv pip install .[dev]
+
       - name: Run pytest
         run: |
-          .\.venv\Scripts\python.exe -m pytest tests `
-            --tb=short --maxfail=1 --disable-warnings -q
+          .venv/bin/python -m pytest tests --tb=short --maxfail=1 --disable-warnings -q
