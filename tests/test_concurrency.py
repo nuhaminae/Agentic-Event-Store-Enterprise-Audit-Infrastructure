@@ -2,11 +2,12 @@
 # Test concurrency control for event store and append operation.
 # RUN: pytest -v
 
+import asyncio
+import os
+import uuid
+
 import pytest
 import pytest_asyncio
-import asyncio
-import uuid
-import os
 from dotenv import load_dotenv
 
 from src.event_store import EventStore
