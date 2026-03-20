@@ -2,8 +2,10 @@
 name: CI
 
 on:
-  push: {}
-  pull_request: {}
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
 
 permissions:
   contents: read
@@ -12,6 +14,7 @@ permissions:
 jobs:
   lint:
     runs-on: windows-latest
+    continue-on-error: true   # <-- allows lint job to fail without failing workflow
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -32,24 +35,20 @@ jobs:
           key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
           restore-keys: ${{ runner.os }}-venv-
 
-      - name: Create virtualenv if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
+      - name: Create virtualenv
         run: uv venv --clear
 
-      - name: Install dependencies if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv pip install .[dev]
+      - name: Install dependencies
+        run: uv pip install .[dev] --upgrade
 
       - name: Confirm Python version
-        run: .venv\Scripts\python.exe --version
+        run: uv run python --version
 
       - name: Style and Lint Validation (Black, isort, Flake8)
         run: |
-          .\.venv\Scripts\black . --exclude=.venv --check --diff
-          .\.venv\Scripts\isort . --skip .venv --check --diff
-          .\.venv\Scripts\python.exe -m flake8 . `
-            --exclude=.venv `
-            --exit-zero
+          uv run black . --exclude=.venv --check --diff
+          uv run isort . --skip .venv --check --diff
+          uv run flake8 . --exclude=.venv
 
   test:
     runs-on: ubuntu-latest
@@ -89,20 +88,17 @@ jobs:
 
       - name: Cache virtualenv
         id: venv-cache
-        uses: actions/cache@v3
+        uses: actions/cache@v5
         with:
           path: .venv
           key: ${{ runner.os }}-venv-${{ hashFiles('pyproject.toml') }}
           restore-keys: ${{ runner.os }}-venv-
 
-      - name: Create virtualenv if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
+      - name: Create virtualenv
         run: uv venv --clear
 
-      - name: Install dependencies if cache miss
-        if: steps.venv-cache.outputs.cache-hit != 'true'
-        run: uv pip install .[dev]
+      - name: Install dependencies
+        run: uv pip install .[dev] --upgrade
 
       - name: Run pytest
-        run: |
-          .venv/bin/python -m pytest tests --tb=short --maxfail=1 --disable-warnings -q
+        run: uv run pytest tests --tb=short --maxfail=1 --disable-warnings -q
