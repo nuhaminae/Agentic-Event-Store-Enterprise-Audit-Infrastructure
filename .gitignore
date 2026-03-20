@@ -1,0 +1,9 @@
+# Ignore environment
+.venv
+.env
+
+# Python artifacts
+__pycache__
+
+# Test data
+data/
