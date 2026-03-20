@@ -1,5 +1,5 @@
 # tests/test_concurrency.py
-# Test concurrency control for event store and append operation.    
+# Test concurrency control for event store and append operation.
 # RUN: pytest -v
 
 import pytest
@@ -17,6 +17,7 @@ pytestmark = pytest.mark.asyncio
 # Load environment variables from .env or .example.env
 load_dotenv()
 
+
 @pytest_asyncio.fixture
 async def event_store():
     dsn = (
@@ -29,6 +30,7 @@ async def event_store():
     await store.connect()
     yield store
     await store.close()
+
 
 async def test_double_decision_concurrency(event_store):
     """
@@ -77,6 +79,7 @@ async def test_double_decision_concurrency(event_store):
         )
         assert len(outbox_rows) == 4
         assert all(r["status"] == "pending" for r in outbox_rows)
+
 
 async def test_append_to_archived_stream(event_store):
     """

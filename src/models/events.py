@@ -2,9 +2,9 @@
 # Pydantic models for Event Store domain
 
 from datetime import datetime
+from enum import Enum
 from typing import Any, Dict, Optional
 from uuid import UUID
-from enum import Enum
 
 from pydantic import BaseModel, Field
 
@@ -12,14 +12,14 @@ from pydantic import BaseModel, Field
 # --- Base Event (for appending) ---
 class BaseEvent(BaseModel):
     """Represents a domain event to be appended to a stream.
-    
+
     Notes:
         - `metadata` is reserved for event-level extras (headers, tags).
         - Correlation and causation IDs are explicit fields.
-    
+
     """
 
-    event_type: str   # should match EventType.name
+    event_type: str  # should match EventType.name
     version: int = Field(default=1, ge=1)  # should match EventType.version
     payload: Dict[str, Any]
     correlation_id: Optional[str] = None
@@ -57,6 +57,7 @@ class StoredEvent(BaseModel):
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None
 
+
 # --- Stream Metadata ---
 class StreamMetadata(BaseModel):
     """Metadata about an event stream (aggregate).
@@ -73,9 +74,11 @@ class StreamMetadata(BaseModel):
     archived_at: Optional[datetime] = None
     metadata: Dict[str, str] = Field(default_factory=dict)
 
+
 # --- Outbox Status ---
 class OutboxStatus(str, Enum):
     """Represents the status of an outbox entry."""
+
     pending = "pending"
     published = "published"
     failed = "failed"
@@ -103,6 +106,7 @@ class ProjectionCheckpoint(BaseModel):
         - Use `stream_id` if the projection replays events per stream.
         - `checkpoint_id` ensures uniqueness when multiple checkpoints exist.
     """
+
     checkpoint_id: UUID
     projection_name: str
     stream_id: Optional[str] = None
@@ -110,6 +114,7 @@ class ProjectionCheckpoint(BaseModel):
     updated_at: datetime
     projection_version: int
     checkpoint_metadata: Dict[str, str] = Field(default_factory=dict)
+
 
 # --- Exceptions ---
 class EventStoreError(Exception):

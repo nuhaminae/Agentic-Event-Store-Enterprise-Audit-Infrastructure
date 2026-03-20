@@ -1,5 +1,5 @@
 # src/event_store.py
-# Enterprise Event Store & Audit Infrastructure 
+# Enterprise Event Store & Audit Infrastructure
 
 import json
 import uuid
@@ -10,12 +10,12 @@ from asyncpg import UniqueViolationError
 
 from src.models.events import (
     BaseEvent,
-    OptimisticConcurrencyError,
     EventStoreError,
+    OptimisticConcurrencyError,
+    ProjectionCheckpoint,
     StoredEvent,
     StreamArchivedError,
     StreamMetadata,
-    ProjectionCheckpoint,
 )
 
 
@@ -99,8 +99,8 @@ class EventStore:
                             e.event_type,
                             e.version,
                             json.dumps(e.payload),
-                            json.dumps({"system": "event_store"}),  
-                            # NOTE: This metadata column is reserved strictly for system-level information 
+                            json.dumps({"system": "event_store"}),
+                            # NOTE: This metadata column is reserved strictly for system-level information
                             # (e.g., audit tags, infrastructure markers). Do not use for domain/business fields.
                             correlation_id,
                             causation_id,
@@ -136,7 +136,6 @@ class EventStore:
 
                 return new_version
 
-
     async def load_stream(
         self,
         stream_id: str,
@@ -154,16 +153,23 @@ class EventStore:
                 params.append(to_position)
             query += " ORDER BY stream_position ASC"
             rows = await conn.fetch(query, *params)
-            #return [StoredEvent(**dict(r)) for r in rows]
+            # return [StoredEvent(**dict(r)) for r in rows]
             events = []
             for r in rows:
                 data = dict(r)
                 # Decode JSON fields into dicts
-                data["payload"] = json.loads(data["payload"]) if isinstance(data["payload"], str) else data["payload"]
-                data["metadata"] = json.loads(data["metadata"]) if isinstance(data["metadata"], str) else data["metadata"]
+                data["payload"] = (
+                    json.loads(data["payload"])
+                    if isinstance(data["payload"], str)
+                    else data["payload"]
+                )
+                data["metadata"] = (
+                    json.loads(data["metadata"])
+                    if isinstance(data["metadata"], str)
+                    else data["metadata"]
+                )
                 events.append(StoredEvent(**data))
             return events
-
 
     async def load_all(
         self,
@@ -185,7 +191,9 @@ class EventStore:
                         ORDER BY global_position ASC
                         LIMIT $4
                     """
-                    rows = await conn.fetch(query, pos, until_position, event_types, batch_size)
+                    rows = await conn.fetch(
+                        query, pos, until_position, event_types, batch_size
+                    )
                 else:
                     query = """
                         SELECT * FROM events
@@ -235,7 +243,6 @@ class EventStore:
                 raise EventStoreError(f"Stream {stream_id} not found")
             return StreamMetadata(**dict(row))
 
-
     async def get_checkpoint(
         self, projection_name: str, stream_id: str | None = None
     ) -> ProjectionCheckpoint:
@@ -243,12 +250,13 @@ class EventStore:
             if stream_id:
                 row = await conn.fetchrow(
                     "SELECT * FROM projection_checkpoints WHERE projection_name=$1 AND stream_id=$2",
-                    projection_name, stream_id
+                    projection_name,
+                    stream_id,
                 )
             else:
                 rows = await conn.fetch(
                     "SELECT * FROM projection_checkpoints WHERE projection_name=$1 ORDER BY updated_at DESC",
-                    projection_name
+                    projection_name,
                 )
                 if len(rows) > 1:
                     raise EventStoreError(
@@ -263,8 +271,9 @@ class EventStore:
                 )
             return ProjectionCheckpoint(**dict(row))
 
-
-    async def list_checkpoints(self, projection_name: str) -> List[ProjectionCheckpoint]:
+    async def list_checkpoints(
+        self, projection_name: str
+    ) -> List[ProjectionCheckpoint]:
         """Return all checkpoints for a given projection."""
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
@@ -272,8 +281,6 @@ class EventStore:
                 projection_name,
             )
             return [ProjectionCheckpoint(**dict(r)) for r in rows]
-
-
 
     async def update_checkpoint(
         self,
