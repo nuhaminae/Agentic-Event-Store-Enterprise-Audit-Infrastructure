@@ -33,6 +33,7 @@ jobs:
       POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
+      PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}   # <-- ensures psql uses password
 
     steps:
       - name: Checkout repository
