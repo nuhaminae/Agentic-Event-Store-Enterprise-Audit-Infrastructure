@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from src.aggregates.agent_session import AgentSessionAggregate
 from src.event_store import EventStore
 from src.models.aggregates import AgentSessionState
-from src.models.events import OptimisticConcurrencyError
+from src.models.events import DomainError, OptimisticConcurrencyError
 
 pytestmark = pytest.mark.asyncio
 
@@ -20,21 +20,14 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def event_store():
     """
-    A pytest fixture that creates an EventStore instance using the environment variables
-    set in .env or .example.env. It connects to the database, yields the EventStore
-    instance, and then closes the connection when the test is finished.
-
-    The EventStore instance is connected to the database before the test is started,
-    and then disconnected after the test is finished. This ensures that the database
-    connection is properly cleaned up after the test is finished, and that the test
-    does not interfere with other tests that may be using the same database.
-
-    The EventStore instance is yielded from the fixture, so that it can be used in the test.
+    Connects to the event store, yielding an EventStore instance
+    ready for use. Automatically closes the connection after the
+    test is finished.
     """
+
     load_dotenv()
     dsn = (
-        f"postgresql://{os.getenv('POSTGRES_USER')}:"
-        f"{os.getenv('POSTGRES_PASSWORD')}@"
+        f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
         f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
         f"{os.getenv('POSTGRES_DB')}"
     )
@@ -46,10 +39,10 @@ async def event_store():
 
 async def test_agent_session_full_lifecycle(event_store):
     """
-    Tests the full lifecycle of an AgentSessionAggregate, including starting, preventing duplicate
-    starts, preventing starts with duplicate model versions, ending, preventing ending if not active,
-    archiving, and preventing archiving if not ended. Also verifies that the events are stored in
-    the event store correctly, and that the outbox verification works as expected.
+    Tests the full lifecycle of an AgentSessionAggregate, from starting a session to archiving it.
+
+    Verifies that the aggregate is correctly persisted and reloaded, and that the outbox
+    table contains the correct events with the correct status ("pending").
     """
     session_id = f"TEST-{uuid.uuid4()}"
     agg = AgentSessionAggregate(session_id)
@@ -66,20 +59,20 @@ async def test_agent_session_full_lifecycle(event_store):
         )
 
     reloaded = await AgentSessionAggregate.load(event_store, session_id)
-    event_ids.extend(ev.event_id for ev in reloaded.events)  # collect StoredEvent IDs
+    event_ids.extend(ev.event_id for ev in reloaded.events)
     assert reloaded.state == AgentSessionState.ACTIVE
     assert reloaded.agent_id == "AGENT-001"
     assert reloaded.model_version == "v1.0"
     reloaded.assert_context_loaded()
 
-    # --- Prevent duplicate start ---
+    # --- Prevent duplicate start (OptimisticConcurrencyError) ---
     with pytest.raises(OptimisticConcurrencyError):
         reloaded.start_session(
             "AGENT-002", "v2.0", "2026-03-21T05:10:00Z", active_model_versions=[]
         )
 
-    # --- Prevent starting with duplicate model version ---
-    with pytest.raises(OptimisticConcurrencyError):
+    # --- Prevent starting with duplicate model version (DomainError now) ---
+    with pytest.raises(DomainError):
         AgentSessionAggregate(session_id).start_session(
             "AGENT-003", "v1.0", "2026-03-21T05:15:00Z", active_model_versions=["v1.0"]
         )
@@ -96,7 +89,7 @@ async def test_agent_session_full_lifecycle(event_store):
     assert reloaded.state == AgentSessionState.ENDED
     assert reloaded.ended_at == "2026-03-21T05:30:00Z"
 
-    # --- Prevent ending if not active ---
+    # --- Prevent ending if not active (OptimisticConcurrencyError) ---
     with pytest.raises(OptimisticConcurrencyError):
         AgentSessionAggregate(session_id).end_session("2026-03-21T05:40:00Z")
 
@@ -111,7 +104,7 @@ async def test_agent_session_full_lifecycle(event_store):
     event_ids.extend(ev.event_id for ev in reloaded.events)
     assert reloaded.state == AgentSessionState.ARCHIVED
 
-    # --- Prevent archiving if not ended ---
+    # --- Prevent archiving if not ended (OptimisticConcurrencyError) ---
     with pytest.raises(OptimisticConcurrencyError):
         AgentSessionAggregate(session_id).archive("2026-03-21T06:10:00Z")
 
