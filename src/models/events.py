@@ -11,13 +11,15 @@ from pydantic import BaseModel, Field
 
 # --- Typed Payloads for Domain Events ---
 class ApplicationSubmittedPayload(BaseModel):
-    """ Payload for ApplicationSubmitted event"""
+    """Payload for ApplicationSubmitted event"""
+
     applicant_id: str
     requested_amount_usd: float
 
 
 class CreditAnalysisCompletedPayload(BaseModel):
-    """ Payload for CreditAnalysisCompleted event"""
+    """Payload for CreditAnalysisCompleted event"""
+
     application_id: str
     agent_id: str
     session_id: str
@@ -30,19 +32,22 @@ class CreditAnalysisCompletedPayload(BaseModel):
 
 
 class FraudScreeningCompletedPayload(BaseModel):
-    """ Payload for FraudScreeningCompleted event"""
+    """Payload for FraudScreeningCompleted event"""
+
     application_id: str
     result: str
 
 
 class ComplianceCheckCompletedPayload(BaseModel):
     """Payload for ComplianceCheckCompleted event"""
+
     record_id: str
     check_type: str
 
 
 class DecisionGeneratedPayload(BaseModel):
     """Payload for DecisionGenerated event"""
+
     decision: str  # "APPROVED" or "REJECTED"
     approved_amount_usd: Optional[float] = None
 
