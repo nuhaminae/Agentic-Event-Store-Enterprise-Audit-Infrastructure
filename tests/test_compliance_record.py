@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from src.aggregates.compliance_record import MANDATORY_CHECKS, ComplianceRecordAggregate
 from src.event_store import EventStore
 from src.models.aggregates import ComplianceState
-from src.models.events import OptimisticConcurrencyError
+from src.models.events import DomainError, OptimisticConcurrencyError
 
 pytestmark = pytest.mark.asyncio
 
@@ -20,21 +20,12 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def event_store():
     """
-    A pytest fixture that creates an EventStore instance using the environment variables
-    set in .env or .example.env. It connects to the database, yields the EventStore
-    instance, and then closes the connection when the test is finished.
-
-    The EventStore instance is connected to the database before the test is started,
-    and then disconnected after the test is finished. This ensures that the database
-    connection is properly cleaned up after the test is finished, and that the test
-    does not interfere with other tests that may be using the same database.
-
-    The EventStore instance is yielded from the fixture, so that it can be used in the test.
+    Provides an EventStore instance connected to the PostgreSQL event store.
+    The EventStore instance is automatically closed after the test is finished.
     """
     load_dotenv()
     dsn = (
-        f"postgresql://{os.getenv('POSTGRES_USER')}:"
-        f"{os.getenv('POSTGRES_PASSWORD')}@"
+        f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
         f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
         f"{os.getenv('POSTGRES_DB')}"
     )
@@ -45,12 +36,6 @@ async def event_store():
 
 
 async def test_compliance_record_full_lifecycle(event_store):
-    """
-    Tests the full lifecycle of a ComplianceRecordAggregate, including recording mandatory checks,
-    verifying all checks are completed, preventing duplicate checks, archiving the record, and
-    preventing recording after archiving. Also verifies that the outbox pattern ensures events
-    are both stored and published.
-    """
     record_id = f"TEST-{uuid.uuid4()}"
     agg = ComplianceRecordAggregate(record_id)
     version = 0
@@ -76,8 +61,8 @@ async def test_compliance_record_full_lifecycle(event_store):
     assert reloaded.state == ComplianceState.ALL_CHECKS_COMPLETED
     reloaded.assert_all_checks_completed()
 
-    # --- Prevent duplicate check ---
-    with pytest.raises(OptimisticConcurrencyError):
+    # --- Prevent duplicate check (DomainError now) ---
+    with pytest.raises(DomainError):
         reloaded.record_check("fraud")
 
     # --- Archive record ---
@@ -91,13 +76,13 @@ async def test_compliance_record_full_lifecycle(event_store):
     assert reloaded.state == ComplianceState.ARCHIVED
     assert reloaded.archived_at == "2026-03-21T06:00:00Z"
 
-    # --- Prevent recording after archive ---
+    # --- Prevent recording after archive (OptimisticConcurrencyError) ---
     with pytest.raises(OptimisticConcurrencyError):
         reloaded.record_check("extra-check")
 
-    # --- Prevent archiving if not completed ---
+    # --- Prevent archiving if not completed (DomainError now) ---
     incomplete = ComplianceRecordAggregate(f"TEST-{uuid.uuid4()}")
-    with pytest.raises(OptimisticConcurrencyError):
+    with pytest.raises(DomainError):
         incomplete.archive("2026-03-21T06:10:00Z")
 
     # --- Outbox verification ---
