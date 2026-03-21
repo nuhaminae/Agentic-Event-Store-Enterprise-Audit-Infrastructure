@@ -19,19 +19,12 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def event_store():
     """
-    A pytest fixture that creates an EventStore instance using the environment variables
-    set in .env or .example.env. It connects to the database, yields the EventStore
-    instance, and then closes the connection when the test is finished.
-
-    The EventStore instance is connected to the database before the test is started,
-    and then disconnected after the test is finished. This ensures that the database
-    connection is properly cleaned up after the test is finished, and that the test
-    does not interfere with other tests that may be using the same database.
+    Returns an EventStore instance connected to the PostgreSQL event store.
+    The EventStore instance is automatically closed after the test is finished.
     """
     load_dotenv()
     dsn = (
-        f"postgresql://{os.getenv('POSTGRES_USER')}:"
-        f"{os.getenv('POSTGRES_PASSWORD')}@"
+        f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
         f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
         f"{os.getenv('POSTGRES_DB')}"
     )
@@ -56,7 +49,7 @@ async def test_audit_ledger_causal_ordering(event_store):
     event_ids = []
 
     # --- Record first event ---
-    agg.record_event("LedgerInitialized", {"info": "start"})
+    agg.record_event("LedgerInitialised", {"info": "start"})
     for e in agg.events:
         version = await event_store.append(
             f"audit-ledger-{ledger_id}", [e], expected_version=version
@@ -66,7 +59,7 @@ async def test_audit_ledger_causal_ordering(event_store):
     event_ids.extend(
         ev.event_id for ev in await event_store.load_stream(f"audit-ledger-{ledger_id}")
     )
-    assert "LedgerInitialized" in reloaded.applied_events.values()
+    assert "LedgerInitialised" in reloaded.applied_events.values()
 
     # --- Record second event with valid causation ---
     causation_id = str(event_ids[0])
@@ -77,14 +70,13 @@ async def test_audit_ledger_causal_ordering(event_store):
         )
 
     reloaded = await AuditLedgerAggregate.load(event_store, ledger_id)
-    # only add the new event_id
     new_ids = [
         ev.event_id for ev in await event_store.load_stream(f"audit-ledger-{ledger_id}")
     ]
-    event_ids = list(set(new_ids))  # keep unique IDs
+    event_ids = list(set(new_ids))
     assert "LedgerEntryAdded" in reloaded.applied_events.values()
 
-    # --- Prevent event with invalid causation ---
+    # --- Prevent event with invalid causation (OptimisticConcurrencyError) ---
     with pytest.raises(OptimisticConcurrencyError):
         reloaded.record_event(
             "LedgerEntryAdded", {"entry": "B"}, causation_id="non-existent-id"

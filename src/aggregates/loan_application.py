@@ -4,27 +4,24 @@
 from typing import Optional
 
 from src.models.aggregates import ApplicationState
-from src.models.events import BaseEvent, OptimisticConcurrencyError, StoredEvent
+from src.models.events import (
+    ApplicationArchivedPayload,
+    ApplicationSubmittedPayload,
+    BaseEvent,
+    CreditAnalysisCompletedPayload,
+    DecisionGeneratedPayload,
+    DomainError,
+    FraudScreeningCompletedPayload,
+    HumanReviewRequiredPayload,
+    OptimisticConcurrencyError,
+    StoredEvent,
+)
 
 
 class LoanApplicationAggregate:
     def __init__(self, application_id: str):
         """
         Initialise a new LoanApplicationAggregate.
-
-        Args:
-            application_id (str): The identifier for the loan application.
-
-        Attributes:
-            application_id (str): The identifier for the loan application.
-            state (ApplicationState): The current state of the loan application.
-            stream_position (int): The current position in the event stream.
-            events (List[BaseEvent]): The list of events in the loan application.
-            applicant_id (Optional[str]): The identifier for the applicant.
-            requested_amount (Optional[float]): The requested amount for the loan.
-            approved_amount (Optional[float]): The approved amount for the loan.
-            decision (Optional[str]): The decision for the loan application.
-            archived_at (Optional[str]): The timestamp when the loan application was archived.
         """
         self.application_id = application_id
         self.state: ApplicationState = ApplicationState.NEW
@@ -41,13 +38,6 @@ class LoanApplicationAggregate:
     async def load(cls, store, application_id: str) -> "LoanApplicationAggregate":
         """
         Loads a LoanApplicationAggregate from the event store.
-
-        Args:
-            store (EventStore): The event store.
-            application_id (str): The identifier for the loan application.
-
-        Returns:
-            LoanApplicationAggregate: The loaded aggregate.
         """
         events = await store.load_stream(f"loan-{application_id}")
         agg = cls(application_id)
@@ -58,12 +48,6 @@ class LoanApplicationAggregate:
     def _apply(self, event: StoredEvent) -> None:
         """
         Applies a stored event to the aggregate.
-
-        Calls the relevant event handler method if it exists, and updates the
-        aggregate's stream position to the position of the applied event.
-
-        Raises:
-            OptimisticConcurrencyError: If the causal ordering of events is violated.
         """
         handler = getattr(self, f"_on_{event.event_type}", None)
         if handler:
@@ -73,11 +57,9 @@ class LoanApplicationAggregate:
     # --- Event Handlers ---
     def _on_ApplicationSubmitted(self, event: StoredEvent) -> None:
         """
-        Applies an ApplicationSubmitted event to the aggregate, updating its state and applicant information.
+        Handles an ApplicationSubmitted event.
 
-        The `_on_ApplicationSubmitted` method takes an ApplicationSubmitted event as input and applies it to the aggregate.
-        It first updates the aggregate's state to `ApplicationState.SUBMITTED`.
-        Then, it updates the aggregate's `applicant_id` and `requested_amount` fields from the event payload.
+        Updates the aggregate's state to SUBMITTED and sets the applicant_id and requested_amount attributes from the event payload.
         """
         self.state = ApplicationState.SUBMITTED
         self.applicant_id = event.payload["applicant_id"]
@@ -85,39 +67,50 @@ class LoanApplicationAggregate:
 
     def _on_CreditAnalysisCompleted(self, event: StoredEvent) -> None:
         """
-        Applies a CreditAnalysisCompleted event to the aggregate, updating its state.
+        Handles a CreditAnalysisCompleted event.
 
-        The `_on_CreditAnalysisCompleted` method takes a CreditAnalysisCompleted event as input and applies it to the aggregate.
-        It updates the aggregate's state to `ApplicationState.CREDIT_ANALYZED`.
+        Args:
+            event (StoredEvent): The CreditAnalysisCompleted event to handle.
+
+        Notes:
+            - Sets the state to CREDIT_ANALYSED.
         """
-
-        self.state = ApplicationState.CREDIT_ANALYZED
+        self.state = ApplicationState.CREDIT_ANALYSED
 
     def _on_FraudScreeningCompleted(self, event: StoredEvent) -> None:
         """
-        Applies a FraudScreeningCompleted event to the aggregate, updating its state.
+        Handles a FraudScreeningCompleted event.
 
-        The `_on_FraudScreeningCompleted` method takes a FraudScreeningCompleted event as input and applies it to the aggregate.
-        It updates the aggregate's state to `ApplicationState.FRAUD_SCREENED`.
+        Args:
+            event (StoredEvent): The FraudScreeningCompleted event to handle.
+
+        Notes:
+            - Sets the state to FRAUD_SCREENED.
         """
         self.state = ApplicationState.FRAUD_SCREENED
 
     def _on_ComplianceCheckCompleted(self, event: StoredEvent) -> None:
         """
-        Applies a ComplianceCheckCompleted event to the aggregate, updating its state.
+        Handles a ComplianceCheckCompleted event.
 
-        The `_on_ComplianceCheckCompleted` method takes a ComplianceCheckCompleted event as input and applies it to the aggregate.
-        It updates the aggregate's state to `ApplicationState.COMPLIANCE_CHECKED`.
+        Args:
+            event (StoredEvent): The ComplianceCheckCompleted event to handle.
+
+        Notes:
+            - Sets the state to COMPLIANCE_CHECKED.
         """
         self.state = ApplicationState.COMPLIANCE_CHECKED
 
     def _on_DecisionGenerated(self, event: StoredEvent) -> None:
         """
-        Applies a DecisionGenerated event to the aggregate, updating its state and decision information.
+        Handles a DecisionGenerated event.
 
-        The `_on_DecisionGenerated` method takes a DecisionGenerated event as input and applies it to the aggregate.
-        It first updates the aggregate's state to `ApplicationState.DECIDED`.
-        Then, it updates the aggregate's `decision` and `approved_amount` fields from the event payload.
+        Args:
+            event (StoredEvent): The DecisionGenerated event to handle.
+
+        Notes:
+            - Sets the state to DECIDED.
+            - Sets the decision and approved_amount attributes from the event payload.
         """
         self.state = ApplicationState.DECIDED
         self.decision = event.payload["decision"]
@@ -125,19 +118,26 @@ class LoanApplicationAggregate:
 
     def _on_HumanReviewRequired(self, event: StoredEvent) -> None:
         """
-        Applies a HumanReviewRequired event to the aggregate, updating its state.
+        Handles a HumanReviewRequired event.
 
-        The `_on_HumanReviewRequired` method takes a HumanReviewRequired event as input and applies it to the aggregate.
-        It updates the aggregate's state to `ApplicationState.HUMAN_REVIEW`.
+        Args:
+            event (StoredEvent): The HumanReviewRequired event to handle.
+
+        Notes:
+            - Sets the state to HUMAN_REVIEW.
         """
         self.state = ApplicationState.HUMAN_REVIEW
 
     def _on_ApplicationArchived(self, event: StoredEvent) -> None:
         """
-        Applies an ApplicationArchived event to the aggregate, updating its state and archived_at field.
+        Handles an ApplicationArchived event.
 
-        The `_on_ApplicationArchived` method takes an ApplicationArchived event as input and applies it to the aggregate.
-        It updates the aggregate's state to `ApplicationState.ARCHIVED` and sets the `archived_at` field to the value from the event payload.
+        Args:
+            event (StoredEvent): The ApplicationArchived event to handle.
+
+        Notes:
+            - Sets the state to ARCHIVED.
+            - Records the archived_at timestamp from the event payload.
         """
         self.state = ApplicationState.ARCHIVED
         self.archived_at = event.payload["archived_at"]
@@ -145,27 +145,26 @@ class LoanApplicationAggregate:
     # --- Commands ---
     def submit_application(self, applicant_id: str, requested_amount_usd: float):
         """
-        Submits a loan application.
+        Submits a loan application for review.
 
-        The `submit_application` method submits a loan application with the given applicant_id and requested_amount_usd.
-        It raises an OptimisticConcurrencyError if the application is already submitted.
+        :param applicant_id: Unique identifier of the applicant.
+        :param requested_amount_usd: Amount requested by the applicant in USD.
+        :raises OptimisticConcurrencyError: If the application has already been submitted.
 
-        Args:
-            applicant_id (str): The identifier for the applicant.
-            requested_amount_usd (float): The requested amount for the loan in USD.
-
-        Raises:
-            OptimisticConcurrencyError: If the application is already submitted.
+        :return: None
         """
         if self.state != ApplicationState.NEW:
-            raise OptimisticConcurrencyError("Application already submitted.")
-        self._raise_event(
-            "ApplicationSubmitted",
-            {
-                "applicant_id": applicant_id,
-                "requested_amount_usd": requested_amount_usd,
-            },
+            raise OptimisticConcurrencyError(
+                "Application already submitted.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
+
+        payload = ApplicationSubmittedPayload(
+            applicant_id=applicant_id,
+            requested_amount_usd=requested_amount_usd,
         )
+        self._raise_event("ApplicationSubmitted", payload.model_dump())
 
     def credit_analysis_completed(
         self,
@@ -181,234 +180,259 @@ class LoanApplicationAggregate:
         """
         Records a credit analysis result for an application.
 
-        The `credit_analysis_completed` method records a credit analysis result for an application with the given
-        agent_id, session_id, model_version, confidence_score, risk_tier, recommended_limit_usd, duration_ms, and
-        input_data_hash.
+        Raises an OptimisticConcurrencyError if the application is not awaiting credit analysis.
 
-        It raises an OptimisticConcurrencyError if the application is not awaiting credit analysis.
-
-        Args:
-            agent_id (str): The identifier for the agent.
-            session_id (str): The identifier for the session.
-            model_version (str): The version of the credit analysis model.
-            confidence_score (float): The confidence score of the credit analysis model.
-            risk_tier (str): The risk tier of the credit analysis model.
-            recommended_limit_usd (float): The recommended limit for the loan in USD.
-            duration_ms (int): The duration of the credit analysis in milliseconds.
-            input_data_hash (Optional[str]): The hash of the input data used for the credit analysis.
-
-        Raises:
-            OptimisticConcurrencyError: If the application is not awaiting credit analysis.
+        :param agent_id: The ID of the agent that ran the credit analysis.
+        :param session_id: The ID of the credit analysis session.
+        :param model_version: The version of the credit analysis model.
+        :param confidence_score: The confidence score of the credit analysis.
+        :param risk_tier: The risk tier of the credit analysis.
+        :param recommended_limit_usd: The recommended limit of the credit analysis.
+        :param duration_ms: The duration of the credit analysis in milliseconds.
+        :param input_data_hash: The hash of the input data used for the credit analysis.
         """
         if self.state != ApplicationState.SUBMITTED:
             raise OptimisticConcurrencyError(
-                "Application not awaiting credit analysis."
+                "Application not awaiting credit analysis.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
-        self._raise_event(
-            "CreditAnalysisCompleted",
-            {
-                "application_id": self.application_id,
-                "agent_id": agent_id,
-                "session_id": session_id,
-                "model_version": model_version,
-                "confidence_score": confidence_score,
-                "risk_tier": risk_tier,
-                "recommended_limit_usd": recommended_limit_usd,
-                "analysis_duration_ms": duration_ms,
-                "input_data_hash": input_data_hash,
-            },
+
+        payload = CreditAnalysisCompletedPayload(
+            application_id=self.application_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            model_version=model_version,
+            confidence_score=confidence_score,
+            risk_tier=risk_tier,
+            recommended_limit_usd=recommended_limit_usd,
+            analysis_duration_ms=duration_ms,
+            input_data_hash=input_data_hash,
         )
+        self._raise_event("CreditAnalysisCompleted", payload.model_dump())
 
     def fraud_screening_completed(self, result: str):
         """
-        Records a fraud screening result for an application.
-
-        The `fraud_screening_completed` method records a fraud screening result for an application with the given result.
-
-        It raises an OptimisticConcurrencyError if the application is not awaiting fraud screening.
+        Marks the application as having completed fraud screening.
 
         Args:
             result (str): The result of the fraud screening.
 
         Raises:
-            OptimisticConcurrencyError: If the application is not awaiting fraud screening.
+            OptimisticConcurrencyError: If the application is not in the CREDIT_ANALYSED state.
         """
-        if self.state != ApplicationState.CREDIT_ANALYZED:
+        if self.state != ApplicationState.CREDIT_ANALYSED:
             raise OptimisticConcurrencyError(
-                "Application not awaiting fraud screening."
+                "Application not awaiting fraud screening.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
-        self._raise_event(
-            "FraudScreeningCompleted",
-            {"application_id": self.application_id, "result": result},
+
+        payload = FraudScreeningCompletedPayload(
+            application_id=self.application_id,
+            result=result,
         )
+        self._raise_event("FraudScreeningCompleted", payload.model_dump())
 
     def generate_decision(
         self, decision: str, approved_amount_usd: Optional[float] = None
     ):
         """
-        Generates a decision for the application.
+        Generate a decision for an application.
 
-        The `generate_decision` method records a decision for the application with the given decision and approved amount in USD.
-
-        It raises an OptimisticConcurrencyError if the application is not awaiting compliance check.
-
-        It raises a ValueError if the decision is not "APPROVED" or "REJECTED".
-
+        The application must have completed compliance checks (ApplicationState.COMPLIANCE_CHECKED).
+        The decision must be either "APPROVED" or "REJECTED".
         If the decision is "APPROVED", it must include an approved_amount_usd.
-
         If the decision is "REJECTED", it must not include an approved_amount_usd.
 
-        Args:
-            decision (str): The decision for the application.
-            approved_amount_usd (Optional[float]): The approved amount in USD for the application.
-
         Raises:
-            OptimisticConcurrencyError: If the application is not awaiting compliance check.
-            ValueError: If the decision is not "APPROVED" or "REJECTED".
+            OptimisticConcurrencyError: If the application has not completed compliance checks.
+            DomainError: If the decision is not "APPROVED" or "REJECTED", or if the approved_amount_usd is not provided when the decision is "APPROVED", or if it is provided when the decision is "REJECTED".
         """
         if self.state != ApplicationState.COMPLIANCE_CHECKED:
             raise OptimisticConcurrencyError(
-                "Decision requires compliance check first."
+                "Decision requires compliance check first.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
+
         if decision not in {"APPROVED", "REJECTED"}:
-            raise ValueError("Decision must be APPROVED or REJECTED.")
+            raise DomainError("Decision must be APPROVED or REJECTED.")
         if decision == "APPROVED" and approved_amount_usd is None:
-            raise ValueError(
+            raise DomainError(
                 "Approved applications must include an approved_amount_usd."
             )
         if decision == "REJECTED" and approved_amount_usd is not None:
-            raise ValueError(
+            raise DomainError(
                 "Rejected applications must not include an approved_amount_usd."
             )
-        self._raise_event(
-            "DecisionGenerated",
-            {"decision": decision, "approved_amount_usd": approved_amount_usd},
+
+        payload = DecisionGeneratedPayload(
+            decision=decision,
+            approved_amount_usd=approved_amount_usd,
         )
+        self._raise_event("DecisionGenerated", payload.model_dump())
 
     def require_human_review(self, reason: str):
         """
-        Records a human review request for an application.
-
-        The `require_human_review` method records a human review request for an application with the given reason.
-
-        It raises an OptimisticConcurrencyError if the application is not awaiting compliance check.
+        Requires a human review for an application.
 
         Args:
-            reason (str): The reason for the human review request.
+            reason (str): The reason for requiring a human review.
 
         Raises:
-            OptimisticConcurrencyError: If the application is not awaiting compliance check.
+            OptimisticConcurrencyError: If the application is not in the COMPLIANCE_CHECKED state.
         """
         if self.state != ApplicationState.COMPLIANCE_CHECKED:
-            raise OptimisticConcurrencyError("Application not ready for human review.")
-        self._raise_event("HumanReviewRequired", {"reason": reason})
+            raise OptimisticConcurrencyError(
+                "Application not ready for human review.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
+
+        payload = HumanReviewRequiredPayload(reason=reason)
+        self._raise_event("HumanReviewRequired", payload.model_dump())
 
     def archive(self, archived_at: str):
         """
-        Archives an application, marking it as archived.
-
-        Raises an OptimisticConcurrencyError if the application is not in the DECIDED or HUMAN_REVIEW state.
+        Archives an application.
 
         Args:
             archived_at (str): The timestamp when the application was archived.
+
+        Raises:
+            OptimisticConcurrencyError: If the application is not in a DECIDED or HUMAN_REVIEW state.
+
+        Returns:
+            None
         """
         if self.state not in {ApplicationState.DECIDED, ApplicationState.HUMAN_REVIEW}:
-            raise OptimisticConcurrencyError("Application not ready for archive.")
-        self._raise_event("ApplicationArchived", {"archived_at": archived_at})
+            raise OptimisticConcurrencyError(
+                "Application not ready for archive.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
+        payload = ApplicationArchivedPayload(archived_at=archived_at)
+        self._raise_event("ApplicationArchived", payload.model_dump())
 
     def _raise_event(self, event_type: str, payload: dict):
         """
-        Raises an event of the specified type with the given payload.
-
-        The event is appended to the aggregate's events list.
+        Raises a domain event of the specified type with the given payload.
 
         Args:
-            event_type (str): The type of event to raise.
+            event_type (str): The type of event to be raised.
             payload (dict): The event payload.
+
+        Returns:
+            None
         """
+
         event = BaseEvent(event_type=event_type, payload=payload, version=1)
         self.events.append(event)
 
     # --- Assertions for command handlers ---
     def assert_not_submitted(self):
         """
-        Asserts that the application has not been submitted.
+        Asserts that the application is not yet submitted.
 
-        Raises an OptimisticConcurrencyError if the application is not in the NEW state.
+        Raises an OptimisticConcurrencyError if the application is not in the
+        ApplicationState.NEW state.
 
-        This assertion is used to ensure that the application has not been submitted before attempting to submit it.
+        :raises: OptimisticConcurrencyError
         """
         if self.state != ApplicationState.NEW:
-            raise OptimisticConcurrencyError("Application already submitted.")
+            raise OptimisticConcurrencyError(
+                "Application already submitted.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
 
     def assert_awaiting_credit_analysis(self):
         """
         Asserts that the application is awaiting credit analysis.
 
-        Raises an OptimisticConcurrencyError if the application is not in the SUBMITTED state.
+        Raises an OptimisticConcurrencyError if the application is not in the
+        ApplicationState.SUBMITTED state.
 
-        This assertion is used to ensure that the application is awaiting credit analysis before attempting to record a credit analysis result.
+        :raises: OptimisticConcurrencyError
         """
         if self.state != ApplicationState.SUBMITTED:
             raise OptimisticConcurrencyError(
-                "Application is not awaiting credit analysis."
+                "Application is not awaiting credit analysis.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
 
     def assert_awaiting_fraud_screening(self):
         """
         Asserts that the application is awaiting fraud screening.
 
-        Raises an OptimisticConcurrencyError if the application is not in the CREDIT_ANALYZED state.
+        Raises an OptimisticConcurrencyError if the application is not in the
+        ApplicationState.CREDIT_ANALYSED state.
 
-        This assertion is used to ensure that the application is awaiting fraud screening before attempting to record a fraud screening result.
+        :raises: OptimisticConcurrencyError
         """
-        if self.state != ApplicationState.CREDIT_ANALYZED:
+        if self.state != ApplicationState.CREDIT_ANALYSED:
             raise OptimisticConcurrencyError(
-                "Application is not awaiting fraud screening."
+                "Application is not awaiting fraud screening.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
 
     def assert_awaiting_compliance_check(self):
         """
         Asserts that the application is awaiting compliance check.
 
-        Raises an OptimisticConcurrencyError if the application is not in the FRAUD_SCREENED state.
+        Raises an OptimisticConcurrencyError if the application is not in the
+        ApplicationState.FRAUD_SCREENED state.
 
-        This assertion is used to ensure that the application is awaiting compliance check before attempting to record a compliance check result.
+        :raises: OptimisticConcurrencyError
         """
         if self.state != ApplicationState.FRAUD_SCREENED:
             raise OptimisticConcurrencyError(
-                "Application is not awaiting compliance check."
+                "Application is not awaiting compliance check.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
 
     def assert_ready_for_decision(self):
         """
         Asserts that the application is ready for decision.
 
-        Raises an OptimisticConcurrencyError if the application is not in the COMPLIANCE_CHECKED state.
-
-        This assertion is used to ensure that the application is ready for decision before attempting to generate a decision.
+        Raises:
+            OptimisticConcurrencyError: If the application is not ready for decision.
         """
         if self.state != ApplicationState.COMPLIANCE_CHECKED:
-            raise OptimisticConcurrencyError("Application is not ready for decision.")
+            raise OptimisticConcurrencyError(
+                "Application is not ready for decision.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
 
     def assert_ready_for_archive(self):
         """
         Asserts that the application is ready for archive.
 
-        Raises an OptimisticConcurrencyError if the application is not in the DECIDED or HUMAN_REVIEW state.
-
-        This assertion is used to ensure that the application is ready for archive before attempting to archive it.
+        Raises:
+            OptimisticConcurrencyError: If the application is not ready for archive.
         """
         if self.state not in {ApplicationState.DECIDED, ApplicationState.HUMAN_REVIEW}:
-            raise OptimisticConcurrencyError("Application not ready for archive.")
+            raise OptimisticConcurrencyError(
+                "Application not ready for archive.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
 
     def assert_ready_for_human_review(self):
         """
         Asserts that the application is ready for human review.
 
-        Raises an OptimisticConcurrencyError if the application is not in the COMPLIANCE_CHECKED state.
-
-        This assertion is used to ensure that the application is ready for human review before attempting to record a human review result.
+        Raises:
+            OptimisticConcurrencyError: If the application is not ready for human review.
         """
         if self.state != ApplicationState.COMPLIANCE_CHECKED:
-            raise OptimisticConcurrencyError("Application not ready for human review.")
+            raise OptimisticConcurrencyError(
+                "Application not ready for human review.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )

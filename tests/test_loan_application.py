@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from src.aggregates.loan_application import LoanApplicationAggregate
 from src.event_store import EventStore
 from src.models.aggregates import ApplicationState
-from src.models.events import OptimisticConcurrencyError
+from src.models.events import DomainError, OptimisticConcurrencyError
 
 pytestmark = pytest.mark.asyncio
 
@@ -20,24 +20,13 @@ pytestmark = pytest.mark.asyncio
 @pytest_asyncio.fixture
 async def event_store():
     """
-    A pytest fixture that creates an EventStore instance using the environment
-    variables set in .env or .example.env. It connects to the database, yields
-    the EventStore instance, and then closes the connection when the test is
-    finished.
-
-    The EventStore instance is connected to the database before the test is
-    started, and then disconnected after the test is finished. This ensures
-    that the database connection is properly cleaned up after the test is finished,
-    and that the test does not interfere with other tests that may be using the
-    same database.
-
-    The EventStore instance is yielded from the fixture, so that it can be used
-    in the test.
+    Returns an EventStore instance connected to the PostgreSQL event store.
+    The EventStore instance is automatically closed after the test is finished.
     """
+
     load_dotenv()
     dsn = (
-        f"postgresql://{os.getenv('POSTGRES_USER')}:"
-        f"{os.getenv('POSTGRES_PASSWORD')}@"
+        f"postgresql://{os.getenv('POSTGRES_USER')}:{os.getenv('POSTGRES_PASSWORD')}@"
         f"{os.getenv('POSTGRES_HOST')}:{os.getenv('POSTGRES_PORT')}/"
         f"{os.getenv('POSTGRES_DB')}"
     )
@@ -272,7 +261,7 @@ async def test_credit_analysis_completed_and_outbox(event_store):
 
     The test creates an application, submits it, reloads the application, runs a credit
     analysis, persists the credit analysis, reloads the application again, and verifies
-    that the state of the application is CREDIT_ANALYZED and that the outbox table
+    that the state of the application is CREDIT_ANALYSED and that the outbox table
     contains the correct events with the correct status ("pending").
     """
     app_id = f"TEST-{uuid.uuid4()}"
@@ -305,7 +294,7 @@ async def test_credit_analysis_completed_and_outbox(event_store):
         )
 
     reloaded = await LoanApplicationAggregate.load(event_store, app_id)
-    assert reloaded.state == ApplicationState.CREDIT_ANALYZED
+    assert reloaded.state == ApplicationState.CREDIT_ANALYSED
 
     async with event_store.pool.acquire() as conn:
         rows = await conn.fetch(
@@ -323,14 +312,14 @@ async def test_fraud_screening_completed_and_outbox(event_store):
     Verifies that the aggregate is correctly persisted and reloaded, and that the outbox
     table contains the correct events with the correct status ("pending").
 
-    The test creates an application, sets its state to CREDIT_ANALYZED, completes a
+    The test creates an application, sets its state to CREDIT_ANALYSED, completes a
     fraud screening, persists the fraud screening, reloads the application again, and
     verifies that the state of the application is FRAUD_SCREENED and that the outbox table
     contains the correct events with the correct status ("pending").
     """
     app_id = f"TEST-{uuid.uuid4()}"
     agg = LoanApplicationAggregate(app_id)
-    agg.state = ApplicationState.CREDIT_ANALYZED
+    agg.state = ApplicationState.CREDIT_ANALYSED
     agg.fraud_screening_completed("PASS")
 
     version = 0
@@ -349,3 +338,58 @@ async def test_fraud_screening_completed_and_outbox(event_store):
         )
         assert len(rows) == len(reloaded.events)
         assert all(r["status"] == "pending" for r in rows)
+
+
+# --- DomainError Tests ---
+async def test_generate_decision_invalid_choice_raises_domain_error(event_store):
+    """
+    Tests that generating a decision with an invalid choice raises a DomainError.
+
+    The test creates an application, sets its state to COMPLIANCE_CHECKED, and
+    then attempts to generate a decision with the choice "MAYBE". It verifies
+    that generating a decision with an invalid choice raises a DomainError.
+    """
+    app_id = f"TEST-{uuid.uuid4()}"
+    agg = LoanApplicationAggregate(app_id)
+    agg.state = ApplicationState.COMPLIANCE_CHECKED
+
+    with pytest.raises(DomainError):
+        agg.generate_decision("MAYBE")
+
+
+async def test_generate_decision_approved_without_amount_raises_domain_error(
+    event_store,
+):
+    """
+    Tests that generating a decision with "APPROVED" but without an approved_amount_usd
+    raises a DomainError.
+
+    The test creates an application, sets its state to COMPLIANCE_CHECKED, and
+    then attempts to generate a decision with the choice "APPROVED" but without
+    an approved_amount_usd. It verifies that generating a decision with
+    "APPROVED" but without an approved_amount_usd raises a DomainError.
+    """
+    app_id = f"TEST-{uuid.uuid4()}"
+    agg = LoanApplicationAggregate(app_id)
+    agg.state = ApplicationState.COMPLIANCE_CHECKED
+
+    with pytest.raises(DomainError):
+        agg.generate_decision("APPROVED")
+
+
+async def test_generate_decision_rejected_with_amount_raises_domain_error(event_store):
+    """
+    Tests that generating a decision with "REJECTED" but with an approved_amount_usd
+    raises a DomainError.
+
+    The test creates an application, sets its state to COMPLIANCE_CHECKED, and
+    then attempts to generate a decision with the choice "REJECTED" but with
+    an approved_amount_usd. It verifies that generating a decision with "REJECTED"
+    but with an approved_amount_usd raises a DomainError.
+    """
+    app_id = f"TEST-{uuid.uuid4()}"
+    agg = LoanApplicationAggregate(app_id)
+    agg.state = ApplicationState.COMPLIANCE_CHECKED
+
+    with pytest.raises(DomainError):
+        agg.generate_decision("REJECTED", approved_amount_usd=1000.0)
