@@ -1,5 +1,5 @@
 # src/models/events.py
-# Pydantic models for Event Store domain
+# Pydantic models for Event Store domain with typed payloads and structured exceptions
 
 from datetime import datetime
 from enum import Enum
@@ -7,6 +7,52 @@ from typing import Any, Dict, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+
+# --- Typed Payloads for Domain Events ---
+class ApplicationSubmittedPayload(BaseModel):
+    """ Payload for ApplicationSubmitted event"""
+    applicant_id: str
+    requested_amount_usd: float
+
+
+class CreditAnalysisCompletedPayload(BaseModel):
+    """ Payload for CreditAnalysisCompleted event"""
+    application_id: str
+    agent_id: str
+    session_id: str
+    model_version: str
+    confidence_score: float
+    risk_tier: str
+    recommended_limit_usd: float
+    analysis_duration_ms: int
+    input_data_hash: Optional[str] = None
+
+
+class FraudScreeningCompletedPayload(BaseModel):
+    """ Payload for FraudScreeningCompleted event"""
+    application_id: str
+    result: str
+
+
+class ComplianceCheckCompletedPayload(BaseModel):
+    """Payload for ComplianceCheckCompleted event"""
+    record_id: str
+    check_type: str
+
+
+class DecisionGeneratedPayload(BaseModel):
+    """Payload for DecisionGenerated event"""
+    decision: str  # "APPROVED" or "REJECTED"
+    approved_amount_usd: Optional[float] = None
+
+
+class HumanReviewRequiredPayload(BaseModel):
+    reason: str
+
+
+class ApplicationArchivedPayload(BaseModel):
+    archived_at: str
 
 
 # --- Base Event (for appending) ---
@@ -19,9 +65,9 @@ class BaseEvent(BaseModel):
 
     """
 
-    event_type: str  # should match EventType.name
-    version: int = Field(default=1, ge=1)  # should match EventType.version
-    payload: Dict[str, Any]
+    event_type: str
+    version: int = Field(default=1, ge=1)
+    payload: Dict[str, Any]  # still stored as dict for JSONB
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None
     metadata: Dict[str, str] = Field(default_factory=dict)
@@ -127,3 +173,16 @@ class StreamArchivedError(EventStoreError):
 
 class OptimisticConcurrencyError(EventStoreError):
     """Raised when optimistic concurrency check fails."""
+
+    def __init__(self, stream_id: str, expected_version: int, actual_version: int):
+        self.stream_id = stream_id
+        self.expected_version = expected_version
+        self.actual_version = actual_version
+        super().__init__(
+            f"Optimistic concurrency error on stream {stream_id}: "
+            f"expected {expected_version}, got {actual_version}"
+        )
+
+
+class DomainError(Exception):
+    """Raised when a domain rule or invariant is violated."""
