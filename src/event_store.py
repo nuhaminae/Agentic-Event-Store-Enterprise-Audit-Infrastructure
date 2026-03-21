@@ -65,7 +65,9 @@ class EventStore:
                 # Concurrency check
                 if expected_version != -1 and current_version != expected_version:
                     raise OptimisticConcurrencyError(
-                        f"Expected version {expected_version}, got {current_version}"
+                        f"Expected version {expected_version}, got {current_version}",
+                        expected_version=expected_version,
+                        actual_version=current_version,
                     )
 
                 # Create stream if new
@@ -107,7 +109,9 @@ class EventStore:
                         )
                     except UniqueViolationError:
                         raise OptimisticConcurrencyError(
-                            f"Stream {stream_id} concurrency conflict at position {new_version}"
+                            f"Stream {stream_id} concurrency conflict at position {new_version}",
+                            expected_version=expected_version,
+                            actual_version=new_version,
                         )
 
                     # Outbox insert with status
