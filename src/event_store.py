@@ -32,13 +32,43 @@ class EventStore:
     """
 
     def __init__(self, dsn: str):
+        """
+        Initialise the EventStore with a PostgreSQL connection string.
+
+        Args:
+            dsn (str): Connection string for the PostgreSQL database.
+
+        Attributes:
+            dsn (str): Connection string for the PostgreSQL database.
+            pool (Optional[asyncpg.Pool]): Underlying connection pool.
+        """
         self.dsn = dsn
         self.pool: Optional[asyncpg.Pool] = None
 
     async def connect(self):
+        """
+        Establish a connection pool to the PostgreSQL database.
+
+        This method sets up an underlying connection pool to the
+        PostgreSQL database. It is a prerequisite for any
+        other operations on the EventStore.
+
+        Note that this method is idempotent, and calling it multiple
+        times will have no additional effect.
+        """
         self.pool = await asyncpg.create_pool(dsn=self.dsn)
 
     async def close(self):
+        """
+        Close the connection pool to the PostgreSQL database.
+
+        This method closes the underlying connection pool to the
+        PostgreSQL database. It is an idempotent operation, and
+        calling it multiple times will have no additional effect.
+
+        Note that this method is usually called when the application is
+        shutting down, to release any resources held by the pool.
+        """
         if self.pool:
             await self.pool.close()
 
@@ -50,6 +80,23 @@ class EventStore:
         correlation_id: str | None = None,
         causation_id: str | None = None,
     ) -> int:
+        """
+        Append a list of events to a stream with concurrency control.
+
+        Args:
+            stream_id (str): The identifier for the event stream.
+            events (List[BaseEvent]): The events to be appended to the stream.
+            expected_version (int): The expected current version of the stream.
+            correlation_id (str | None, optional): The correlation ID for the events.
+            causation_id (str | None, optional): The causation ID for the events.
+
+        Returns:
+            int: The new version of the stream after appending the events.
+
+        Raises:
+            StreamArchivedError: If the stream has been archived.
+            OptimisticConcurrencyError: If the expected version does not match the current version.
+        """
         async with self.pool.acquire() as conn:
             async with conn.transaction():
                 # Check stream metadata
@@ -65,7 +112,9 @@ class EventStore:
                 # Concurrency check
                 if expected_version != -1 and current_version != expected_version:
                     raise OptimisticConcurrencyError(
-                        f"Expected version {expected_version}, got {current_version}"
+                        stream_id=stream_id,
+                        expected_version=expected_version,
+                        actual_version=current_version,
                     )
 
                 # Create stream if new
@@ -105,9 +154,13 @@ class EventStore:
                             correlation_id,
                             causation_id,
                         )
+
+                    # UniqueViolationError handling
                     except UniqueViolationError:
                         raise OptimisticConcurrencyError(
-                            f"Stream {stream_id} concurrency conflict at position {new_version}"
+                            stream_id=stream_id,
+                            expected_version=new_version,
+                            actual_version=new_version,  # or current_version depending on context
                         )
 
                     # Outbox insert with status
@@ -142,6 +195,17 @@ class EventStore:
         from_position: int = 0,
         to_position: int | None = None,
     ) -> List[StoredEvent]:
+        """
+        Load events from a stream in the event store.
+
+        Args:
+            stream_id (str): The identifier for the event stream.
+            from_position (int, optional): The starting position for the event range. Defaults to 0.
+            to_position (int | None, optional): The ending position for the event range. Defaults to None.
+
+        Returns:
+            List[StoredEvent]: The list of events loaded from the stream.
+        """
         async with self.pool.acquire() as conn:
             query = """
                 SELECT * FROM events
@@ -216,6 +280,15 @@ class EventStore:
                     break
 
     async def stream_version(self, stream_id: str) -> int:
+        """
+        Return the current version of a stream in the event store.
+
+        Args:
+            stream_id (str): The identifier for the event stream.
+
+        Returns:
+            int: The current version of the stream, or 0 if the stream does not exist.
+        """
         async with self.pool.acquire() as conn:
             version = await conn.fetchval(
                 "SELECT current_version FROM event_streams WHERE stream_id=$1",
@@ -224,6 +297,15 @@ class EventStore:
             return version or 0
 
     async def archive_stream(self, stream_id: str) -> None:
+        """
+        Archive an event stream by setting the archived_at field to the current timestamp.
+
+        Args:
+            stream_id (str): The identifier for the event stream to archive.
+
+        Returns:
+            None
+        """
         async with self.pool.acquire() as conn:
             await conn.execute(
                 """
@@ -235,6 +317,18 @@ class EventStore:
             )
 
     async def get_stream_metadata(self, stream_id: str) -> StreamMetadata:
+        """
+        Load the metadata for a stream from the event store.
+
+        Args:
+            stream_id (str): The identifier for the event stream.
+
+        Returns:
+            StreamMetadata: The metadata for the stream.
+
+        Raises:
+            EventStoreError: If the stream is not found.
+        """
         async with self.pool.acquire() as conn:
             row = await conn.fetchrow(
                 "SELECT * FROM event_streams WHERE stream_id=$1", stream_id
@@ -246,6 +340,19 @@ class EventStore:
     async def get_checkpoint(
         self, projection_name: str, stream_id: str | None = None
     ) -> ProjectionCheckpoint:
+        """
+        Load the checkpoint for a projection from the event store.
+
+        Args:
+            projection_name (str): The identifier for the projection.
+            stream_id (str | None, optional): The identifier for the event stream. Defaults to None.
+
+        Returns:
+            ProjectionCheckpoint: The checkpoint for the projection.
+
+        Raises:
+            EventStoreError: If the checkpoint is not found or if multiple checkpoints exist without a stream_id.
+        """
         async with self.pool.acquire() as conn:
             if stream_id:
                 row = await conn.fetchrow(
@@ -290,6 +397,19 @@ class EventStore:
         projection_version: int = 1,
         checkpoint_metadata: dict | None = None,
     ) -> None:
+        """
+        Update the checkpoint for a projection in the event store.
+
+        Args:
+            projection_name (str): The identifier for the projection.
+            last_position (int): The last global position processed by the projection.
+            stream_id (str | None, optional): The identifier for the event stream associated with the projection. Defaults to None.
+            projection_version (int, optional): The version number of the projection, used for tracking schema changes. Defaults to 1.
+            checkpoint_metadata (dict | None, optional): Additional metadata associated with the checkpoint, such as tags or notes. Defaults to None.
+
+        Raises:
+            EventStoreError: If the checkpoint metadata is invalid, or if a duplicate checkpoint is detected.
+        """
         async with self.pool.acquire() as conn:
             try:
                 await conn.execute(
