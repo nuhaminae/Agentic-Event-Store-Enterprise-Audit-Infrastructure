@@ -3,6 +3,7 @@
 
 from typing import Dict, List, Optional
 
+from src.models.aggregates import AuditLedgerEventPayload
 from src.models.events import BaseEvent, OptimisticConcurrencyError, StoredEvent
 
 
@@ -14,16 +15,16 @@ class AuditLedgerAggregate:
 
     def __init__(self, ledger_id: str):
         """
-        Initialise the Audit Ledger Aggregate.
+        Initialises a new AuditLedgerAggregate.
 
         Args:
-            ledger_id (str): The identifier for the audit ledger.
+            ledger_id (str): The unique identifier for this audit ledger.
 
         Attributes:
-            ledger_id (str): The identifier for the audit ledger.
-            stream_position (int): The current position in the event stream.
-            events (List[BaseEvent]): The list of events in the audit ledger.
-            applied_events (Dict[str, str]): The dictionary of applied events, keyed by correlation ID and valued by causation ID.
+            ledger_id (str): The unique identifier for this audit ledger.
+            stream_position (int): The current position of the event stream.
+            events (List[BaseEvent]): The list of events that have occurred in the audit ledger.
+            applied_events (Dict[str, str]): A dictionary of event IDs to their corresponding causation IDs.
         """
         self.ledger_id = ledger_id
         self.stream_position: int = 0
@@ -33,14 +34,14 @@ class AuditLedgerAggregate:
     @classmethod
     async def load(cls, store, ledger_id: str) -> "AuditLedgerAggregate":
         """
-        Load the Audit Ledger Aggregate from the event store.
+        Loads an AuditLedgerAggregate from the event store.
 
         Args:
-            store (EventStore): The event store.
-            ledger_id (str): The ledger ID.
+            store (EventStore): The event store to load from.
+            ledger_id (str): The unique identifier for this audit ledger.
 
         Returns:
-            AuditLedgerAggregate: The loaded aggregate.
+            AuditLedgerAggregate: The loaded AuditLedgerAggregate.
         """
         events = await store.load_stream(f"audit-ledger-{ledger_id}")
         agg = cls(ledger_id)
@@ -50,17 +51,23 @@ class AuditLedgerAggregate:
 
     def _apply(self, event: StoredEvent) -> None:
         """
-        Apply a stored event to the aggregate.
+        Applies a stored event to the aggregate.
 
-        Checks for causal ordering violations before applying the event.
+        Enforces causal ordering by checking that the event's causation
+        ID is present in the applied events. If not found, raises an
+        OptimisticConcurrencyError.
 
-        Raises:
-            OptimisticConcurrencyError: If the causal ordering of events is violated.
+        :param event: The event to be applied.
+        :type event: StoredEvent
+        :raises OptimisticConcurrencyError: If the causation ID is not found.
         """
         if event.causation_id and event.causation_id not in self.applied_events:
             raise OptimisticConcurrencyError(
-                f"Causal ordering violation: causation {event.causation_id} not found."
+                f"Causal ordering violation: causation {event.causation_id} not found.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
             )
+
         self.applied_events[str(event.event_id)] = event.event_type
         self.stream_position = event.stream_position
 
@@ -68,31 +75,60 @@ class AuditLedgerAggregate:
     def record_event(
         self,
         event_type: str,
+        payload: Dict,
+        correlation_id: Optional[str] = None,
+        causation_id: Optional[str] = None,
+    ):
+        """
+        Records an event in the audit ledger.
+
+        Args:
+            event_type (str): The type of event to record.
+            payload (Dict): The event payload.
+            correlation_id (Optional[str], optional): Correlation ID for tracing workflows. Defaults to None.
+            causation_id (Optional[str], optional): Causation ID for tracing causal chains. Defaults to None.
+
+        Raises:
+            OptimisticConcurrencyError: If the causation ID has not been applied yet.
+        """
+        if causation_id and causation_id not in self.applied_events:
+            raise OptimisticConcurrencyError(
+                f"Causal ordering violation: causation {causation_id} not yet applied.",
+                expected_version=self.stream_position,
+                actual_version=self.stream_position + 1,
+            )
+
+        validated_payload = AuditLedgerEventPayload(data=payload)
+        self._raise_event(
+            event_type,
+            validated_payload.model_dump(),
+            correlation_id=correlation_id,
+            causation_id=causation_id,
+        )
+
+    def _raise_event(
+        self,
+        event_type: str,
         payload: dict,
         correlation_id: Optional[str] = None,
         causation_id: Optional[str] = None,
     ):
         """
-        Record an event in the audit ledger.
-
-        Raises:
-            OptimisticConcurrencyError: If the causal ordering of events is violated.
+        Raises an event of the specified type with the given payload.
 
         Args:
-            event_type (str): The type of event to record.
-            payload (dict): The event payload.
-            correlation_id (Optional[str]): The correlation ID for the event.
-            causation_id (Optional[str]): The causation ID for the event.
-        """
-        if causation_id and causation_id not in self.applied_events:
-            raise OptimisticConcurrencyError(
-                f"Causal ordering violation: causation {causation_id} not yet applied."
-            )
+            event_type (str): The type of the event to be raised.
+            payload (dict): The payload of the event to be raised.
+            correlation_id (Optional[str]): The correlation ID linking related events across streams.
+            causation_id (Optional[str]): The causation ID linking back to the event that triggered this one.
 
+        Returns:
+            None
+        """
         event = BaseEvent(
             event_type=event_type,
             payload=payload,
-            version=1,  # schema version fixed
+            version=1,
             correlation_id=correlation_id,
             causation_id=causation_id,
         )
