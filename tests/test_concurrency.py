@@ -1,6 +1,6 @@
 # tests/test_concurrency.py
 # Test concurrency control for event store and append operation.
-# RUN: pytest -v
+# RUN: pytest -v tests/test_concurrency.py
 
 import asyncio
 import os
