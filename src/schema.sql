@@ -59,3 +59,4 @@ CREATE INDEX idx_events_stream_id ON events (stream_id, stream_position);       
 CREATE INDEX idx_events_global_pos ON events (global_position);                 -- for replay
 CREATE INDEX idx_events_type ON events (event_type);                            -- for replay
 CREATE INDEX idx_events_recorded ON events (recorded_at);                       -- for audit 
+
