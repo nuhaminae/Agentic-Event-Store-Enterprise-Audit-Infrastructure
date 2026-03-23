@@ -41,7 +41,7 @@ class FraudScreeningCompletedPayload(BaseModel):
 class ComplianceCheckCompletedPayload(BaseModel):
     """Payload for ComplianceCheckCompleted event"""
 
-    record_id: str
+    compliance_id: str
     check_type: str
 
 
