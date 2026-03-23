@@ -49,7 +49,7 @@ class FraudScreeningCommand(BaseModel):
 class ComplianceCheckCommand(BaseModel):
     """Record a compliance check for a compliance record."""
 
-    record_id: str
+    compliance_id: str
     check_type: str
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None

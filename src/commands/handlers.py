@@ -146,11 +146,11 @@ async def handle_compliance_check(cmd, store) -> dict:
         OptimisticConcurrencyError: If the event store version does not match the expected version.
     """
     try:
-        record = await ComplianceRecordAggregate.load(store, cmd.record_id)
+        record = await ComplianceRecordAggregate.load(store, cmd.compliance_id)
         record.record_check(cmd.check_type)
 
         await store.append(
-            stream_id=f"compliance-{cmd.record_id}",
+            stream_id=f"compliance-{cmd.compliance_id}",
             events=record.events,
             expected_version=record.stream_position,
             correlation_id=cmd.correlation_id,

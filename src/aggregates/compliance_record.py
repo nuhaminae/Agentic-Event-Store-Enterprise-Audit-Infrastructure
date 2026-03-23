@@ -21,18 +21,18 @@ MANDATORY_CHECKS = {"fraud", "credit", "kyc", "aml"}
 
 class ComplianceRecordAggregate:
 
-    def __init__(self, record_id: str):
+    def __init__(self, compliance_id: str):
         """
         Initialises a ComplianceRecordAggregate instance.
 
         Args:
-            record_id (str): The ID of the compliance record.
+            compliance_id (str): The ID of the compliance record.
 
         Sets the compliance record state to NEW, stream position to 0,
         and initialises the events, completed checks, and archived_at
         attributes.
         """
-        self.record_id = record_id
+        self.compliance_id = compliance_id
         self.state: ComplianceState = ComplianceState.NEW
         self.stream_position: int = 0
         self.events: list[BaseEvent] = []
@@ -40,19 +40,19 @@ class ComplianceRecordAggregate:
         self.archived_at: Optional[str] = None
 
     @classmethod
-    async def load(cls, store, record_id: str) -> "ComplianceRecordAggregate":
+    async def load(cls, store, compliance_id: str) -> "ComplianceRecordAggregate":
         """
         Loads a compliance record aggregate from the event store.
 
         Args:
             store: The event store to load from.
-            record_id (str): The ID of the compliance record to load.
+            compliance_id (str): The ID of the compliance record to load.
 
         Returns:
             ComplianceRecordAggregate: The loaded compliance record aggregate.
         """
-        events = await store.load_stream(f"compliance-{record_id}")
-        agg = cls(record_id)
+        events = await store.load_stream(f"compliance-{compliance_id}")
+        agg = cls(compliance_id)
         for event in events:
             agg._apply(event)
         return agg

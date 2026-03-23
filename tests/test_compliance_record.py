@@ -36,8 +36,8 @@ async def event_store():
 
 
 async def test_compliance_record_full_lifecycle(event_store):
-    record_id = f"TEST-{uuid.uuid4()}"
-    agg = ComplianceRecordAggregate(record_id)
+    compliance_id = f"TEST-{uuid.uuid4()}"
+    agg = ComplianceRecordAggregate(compliance_id)
     version = 0
     event_ids = []
 
@@ -46,9 +46,9 @@ async def test_compliance_record_full_lifecycle(event_store):
         agg.record_check(check)
         for e in agg.events:
             version = await event_store.append(
-                f"compliance-{record_id}", [e], expected_version=version
+                f"compliance-{compliance_id}", [e], expected_version=version
             )
-        reloaded = await ComplianceRecordAggregate.load(event_store, record_id)
+        reloaded = await ComplianceRecordAggregate.load(event_store, compliance_id)
         event_ids.extend(ev.event_id for ev in reloaded.events)
         assert check in reloaded.completed_checks
         assert reloaded.state in {
@@ -57,7 +57,7 @@ async def test_compliance_record_full_lifecycle(event_store):
         }
 
     # --- Verify all checks completed ---
-    reloaded = await ComplianceRecordAggregate.load(event_store, record_id)
+    reloaded = await ComplianceRecordAggregate.load(event_store, compliance_id)
     assert reloaded.state == ComplianceState.ALL_CHECKS_COMPLETED
     reloaded.assert_all_checks_completed()
 
@@ -69,9 +69,9 @@ async def test_compliance_record_full_lifecycle(event_store):
     reloaded.archive("2026-03-21T06:00:00Z")
     for e in reloaded.events:
         version = await event_store.append(
-            f"compliance-{record_id}", [e], expected_version=version
+            f"compliance-{compliance_id}", [e], expected_version=version
         )
-    reloaded = await ComplianceRecordAggregate.load(event_store, record_id)
+    reloaded = await ComplianceRecordAggregate.load(event_store, compliance_id)
     event_ids.extend(ev.event_id for ev in reloaded.events)
     assert reloaded.state == ComplianceState.ARCHIVED
     assert reloaded.archived_at == "2026-03-21T06:00:00Z"
