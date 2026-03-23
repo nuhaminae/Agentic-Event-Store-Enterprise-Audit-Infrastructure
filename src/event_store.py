@@ -322,4 +322,3 @@ class EventStore:
                 )
             except Exception as e:
                 raise EventStoreError(f"Unexpected error updating checkpoint: {e}")
-
