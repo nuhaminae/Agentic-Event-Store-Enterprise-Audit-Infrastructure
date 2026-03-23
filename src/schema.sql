@@ -49,7 +49,7 @@ CREATE TABLE projection_checkpoints (
     last_position                   BIGINT NOT NULL DEFAULT 0,                      -- checkpoint
     updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),             -- checkpoint
     projection_version              INT NOT NULL DEFAULT 1,                         -- versioning for evolving projections
-    checkpoint_metadata             JSONB NOT NULL DEFAULT '{}'::jsonb              -- extra attributes
+    checkpoint_metadata             JSONB NOT NULL DEFAULT '{}'::jsonb,             -- extra attributes
     CONSTRAINT                      uq_projection UNIQUE (projection_name, stream_id)
 
 ); 
@@ -59,3 +59,4 @@ CREATE INDEX idx_events_stream_id ON events (stream_id, stream_position);       
 CREATE INDEX idx_events_global_pos ON events (global_position);                 -- for replay
 CREATE INDEX idx_events_type ON events (event_type);                            -- for replay
 CREATE INDEX idx_events_recorded ON events (recorded_at);                       -- for audit 
+
