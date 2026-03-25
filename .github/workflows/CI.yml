@@ -18,7 +18,7 @@ jobs:
         env:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_DB: ledger_app   # standardised DB name
         ports:
           - 5432:5432
         options: >-
@@ -30,10 +30,10 @@ jobs:
     env:
       POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
       POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-      POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+      POSTGRES_DB: ledger_app
       POSTGRES_HOST: localhost
       POSTGRES_PORT: 5432
-      PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}   # <-- ensures psql uses password
+      PGPASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
 
     steps:
       - name: Checkout repository
