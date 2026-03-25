@@ -75,6 +75,7 @@ jobs:
       - name: Initialize schema
         run: |
           psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -f src/schema.sql
+          psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -f src/projection_schema.sql
 
       - name: Seed database
         run: |
