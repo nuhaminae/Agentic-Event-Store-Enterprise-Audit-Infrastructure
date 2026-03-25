@@ -17,7 +17,6 @@ class UpcasterRegistry:
         self._registry: dict[tuple[str, int], callable] = {}
 
     def register(self, event_type: str, from_version: int, upcaster):
-        
         """
         Register an upcaster for a given event type and version.
 
