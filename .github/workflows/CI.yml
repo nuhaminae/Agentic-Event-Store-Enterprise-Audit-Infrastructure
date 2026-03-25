@@ -76,6 +76,10 @@ jobs:
         run: |
           psql -h $POSTGRES_HOST -U $POSTGRES_USER -d $POSTGRES_DB -f src/schema.sql
 
+      - name: Seed database
+        run: |
+          .venv/bin/python -m src.init_db
+
       - name: Run pytest
         run: |
           .venv/bin/python -m pytest tests \
