@@ -44,13 +44,13 @@ CREATE TABLE outbox (
 -- Projection Checkpoints: track replay progress
 CREATE TABLE projection_checkpoints ( 
     checkpoint_id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),     -- unique identifier
-    projection_name                 TEXT NOT NULL,                                  -- projection name
+    projection_name                 TEXT NOT NULL UNIQUE,                           -- projection name, now unique by itself
     stream_id                       TEXT,                                           -- optional, if per-stream
     last_position                   BIGINT NOT NULL DEFAULT 0,                      -- checkpoint
     updated_at                      TIMESTAMPTZ NOT NULL DEFAULT NOW(),             -- checkpoint
     projection_version              INT NOT NULL DEFAULT 1,                         -- versioning for evolving projections
     checkpoint_metadata             JSONB NOT NULL DEFAULT '{}'::jsonb,             -- extra attributes
-    CONSTRAINT                      uq_projection UNIQUE (projection_name, stream_id)
+    CONSTRAINT                      uq_projection UNIQUE (projection_name)
 
 ); 
 
