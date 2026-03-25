@@ -12,6 +12,12 @@ from src.upcasting.upcasters import (
 
 
 def test_upcast_credit_analysis():
+    """
+    Test upcasting of CreditAnalysisCompleted from version 1 to 2.
+
+    Given an original CreditAnalysisCompleted event from version 1, when upcasting it to version 2,
+    the resulting event should have the model version and confidence score set, and the version should be 2.
+    """
     original = BaseEvent(
         event_type="CreditAnalysisCompleted",
         payload={"score": 720},
@@ -31,6 +37,12 @@ def test_upcast_credit_analysis():
 
 
 def test_upcast_decision_generated():
+    """
+    Test upcasting of DecisionGenerated from version 1 to 2.
+
+    Given an original DecisionGenerated event from version 1, when upcasting it to version 2,
+    the resulting event should have the regulatory_basis set, and the version should be 2.
+    """
     original = BaseEvent(
         event_type="DecisionGenerated",
         payload={"decision": "APPROVED"},
