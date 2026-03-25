@@ -76,6 +76,7 @@ class BaseEvent(BaseModel):
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None
     metadata: Dict[str, str] = Field(default_factory=dict)
+    recorded_at: Optional[datetime] = None
 
 
 # --- Event Types ---
