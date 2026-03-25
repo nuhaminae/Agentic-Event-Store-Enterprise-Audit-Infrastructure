@@ -1,7 +1,7 @@
 # Test upcasting of events
 # RUN: pytest -v tests/test_upcasting.py
 
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.models.events import BaseEvent
 from src.upcasting.registry import UpcasterRegistry
@@ -22,7 +22,7 @@ def test_upcast_credit_analysis():
         event_type="CreditAnalysisCompleted",
         payload={"score": 720},
         version=1,
-        recorded_at=datetime(2026, 3, 25),
+        recorded_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
     )
     registry = UpcasterRegistry()
     registry.register("CreditAnalysisCompleted", 1, upcast_credit_analysis_v1_to_v2)
@@ -47,7 +47,7 @@ def test_upcast_decision_generated():
         event_type="DecisionGenerated",
         payload={"decision": "APPROVED"},
         version=1,
-        recorded_at=datetime(2026, 3, 25),
+        recorded_at=datetime(2026, 3, 25, tzinfo=timezone.utc),
     )
     registry = UpcasterRegistry()
     registry.register("DecisionGenerated", 1, upcast_decision_generated_v1_to_v2)
