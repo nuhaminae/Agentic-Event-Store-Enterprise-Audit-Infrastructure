@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from src.projections.agent_performance import AgentPerformanceProjection
 from src.projections.application_summary import ApplicationSummaryProjection
 from src.projections.compliance_audit import ComplianceAuditProjection
+from src.upcasting.setup import build_registry
 
 
 class ProjectionDaemon:
@@ -33,6 +34,9 @@ class ProjectionDaemon:
         self.batch_size = batch_size
         self.conn = None
         self.lag_thresholds = lag_thresholds or {}
+
+        # Set up registry with all upcasters
+        self.upcaster_registry = build_registry()
 
     async def connect(self):
         """
@@ -78,12 +82,14 @@ class ProjectionDaemon:
             return
 
         for row in rows:
-            await projection.apply(self.conn, row)
+            event = self.upcaster_registry.from_row(row)  # normalise event
+            await projection.apply(self.conn, event)  # pass normalised event
 
         new_pos = rows[-1]["global_position"]
         await self._update_checkpoint(projection.name, new_pos)
 
-        lag = await self._compute_lag(new_pos)
+        # Compute lag relative to projection checkpoint
+        lag = await self._compute_lag(projection.name)
         self._report_ui_contract(projection.name, lag, rows[-1]["recorded_at"])
 
     async def _load_checkpoint(self, name):
@@ -118,14 +124,16 @@ class ProjectionDaemon:
             datetime.now(UTC),  # timezone‑aware UTC
         )
 
-    async def _compute_lag(self, pos):
+    async def _compute_lag(self, projection_name: str) -> int:
         """
-        Computes the lag of the given projection position with respect to the latest event position
+        Computes the lag of the given projection with respect to the latest event position.
 
-        :param pos: The last position of the projection
+        :param projection_name: The name of the projection whose lag is being computed
         :returns: The lag of the projection in terms of the number of events
         :rtype: int
         """
+        checkpoint = await self._load_checkpoint(projection_name)
+        pos = checkpoint.get("last_position", 0)
         latest = await self.conn.fetchval("SELECT max(global_position) FROM events")
         return latest - pos if latest else 0
 

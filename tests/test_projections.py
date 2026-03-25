@@ -77,9 +77,10 @@ async def test_projection_lag_slo(event_store_dsn, caplog):
     caplog.set_level(logging.INFO)
 
     # Run daemon once to process seeded events
+    # Compute lag explicitly
     await daemon._process_projection(projections[0])
+    lag = await daemon._compute_lag("ApplicationSummary")
 
-    lag = await daemon._compute_lag(0)
     assert (
         lag < thresholds["ApplicationSummary"]
     ), f"ApplicationSummary lag too high: {lag}"
@@ -126,11 +127,26 @@ async def test_projection_lag_warning(event_store_dsn, caplog):
         0,
     )
 
-    # Process projection
-    await daemon._process_projection(proj)
-
-    # Compute lag explicitly
-    lag = await daemon._compute_lag(0)
+    # Compute lag without processing
+    lag = await daemon._compute_lag("ApplicationSummary")
     assert lag > thresholds["ApplicationSummary"], "Lag did not exceed threshold"
 
+    await conn.close()
+
+
+async def test_application_summary_snapshot(event_store_dsn):
+    conn = await asyncpg.connect(event_store_dsn)
+    proj = ApplicationSummaryProjection()
+    await proj.snapshot(conn)
+    rows = await conn.fetch("SELECT * FROM application_summary")
+    assert len(rows) > 0
+    await conn.close()
+
+
+async def test_agent_performance_snapshot(event_store_dsn):
+    conn = await asyncpg.connect(event_store_dsn)
+    proj = AgentPerformanceProjection()
+    await proj.snapshot(conn)
+    rows = await conn.fetch("SELECT * FROM agent_performance")
+    assert len(rows) > 0
     await conn.close()

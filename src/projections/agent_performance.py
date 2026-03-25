@@ -2,13 +2,14 @@
 # Tracks agent performance metrics keyed by (agent_id, model_version).
 # Increments decisions count when an AgentDecisionMade event occurs.
 
-import json
+from src.models.events import BaseEvent
+from src.upcasting.setup import build_registry
 
 
 class AgentPerformanceProjection:
     name = "AgentPerformance"
 
-    async def apply(self, conn, event):
+    async def apply(self, conn, event: BaseEvent):
         """
         Applies an AgentDecisionMade event to the projection.
 
@@ -19,8 +20,9 @@ class AgentPerformanceProjection:
         :type conn: asyncpg.Connection
         :type event: dict
         """
-        if event["event_type"] == "AgentDecisionMade":
-            payload = json.loads(event["payload"])
+
+        if event.event_type == "AgentDecisionMade":
+            payload = event.payload
             agent_id = payload.get("agent_id")
             model_version = payload.get("model_version", "v1")
             if agent_id:
@@ -36,5 +38,7 @@ class AgentPerformanceProjection:
     async def snapshot(self, conn):
         """Rebuild agent performance from all events."""
         rows = await conn.fetch("SELECT * FROM events ORDER BY global_position ASC")
+        registry = build_registry()
         for row in rows:
-            await self.apply(conn, row)
+            event = registry.from_row(row)
+            await self.apply(conn, event)
