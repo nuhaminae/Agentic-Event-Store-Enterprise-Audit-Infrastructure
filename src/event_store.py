@@ -1,6 +1,7 @@
 # src/event_store.py
 # Enterprise Event Store & Audit Infrastructure
 
+import hashlib
 import json
 import uuid
 from typing import AsyncIterator, List, Optional
@@ -45,7 +46,7 @@ class EventStore:
     async def append(
         self,
         stream_id: str,
-        events: List[BaseEvent],
+        events: list,
         expected_version: int,
         correlation_id: str | None = None,
         causation_id: str | None = None,
@@ -81,10 +82,42 @@ class EventStore:
                         stream_id.split("-")[0],
                     )
 
+                # Get last event hash for chain continuity
+                last_row = await conn.fetchrow(
+                    "SELECT metadata FROM events WHERE stream_id=$1 ORDER BY stream_position DESC LIMIT 1",
+                    stream_id,
+                )
+                prev_hash = None
+                if last_row:
+                    metadata = last_row["metadata"]
+                    if isinstance(metadata, dict):
+                        prev_hash = metadata.get("event_hash")
+                    elif isinstance(metadata, str):
+                        try:
+                            prev_hash = json.loads(metadata).get("event_hash")
+                        except Exception:
+                            prev_hash = None
+
                 new_version = current_version
                 for e in events:
                     new_version += 1
                     event_id = str(uuid.uuid4())
+
+                    # Compute deterministic hash for this event
+                    payload_str = json.dumps(e.payload, sort_keys=True)
+                    record = (
+                        f"{event_id}{stream_id}{new_version}{e.event_type}{payload_str}"
+                    )
+
+                    event_hash = hashlib.sha256(record.encode()).hexdigest()
+
+                    # Build metadata with chain info
+                    metadata = {
+                        "system": "event_store",
+                        "event_hash": event_hash,
+                        "prev_hash": prev_hash,
+                    }
+
                     try:
                         await conn.execute(
                             """
@@ -101,9 +134,7 @@ class EventStore:
                             e.event_type,
                             e.version,
                             json.dumps(e.payload),
-                            json.dumps({"system": "event_store"}),
-                            # NOTE: This metadata column is reserved strictly for system-level information
-                            # (e.g., audit tags, infrastructure markers). Do not use for domain/business fields.
+                            json.dumps(metadata),
                             correlation_id,
                             causation_id,
                         )
@@ -114,7 +145,7 @@ class EventStore:
                             actual_version=new_version,
                         )
 
-                    # Outbox insert with status
+                    # Outbox insert
                     outbox_id = str(uuid.uuid4())
                     await conn.execute(
                         """
@@ -126,6 +157,9 @@ class EventStore:
                         "event_bus",
                         json.dumps(e.payload),
                     )
+
+                    # Update prev_hash for next event
+                    prev_hash = event_hash
 
                 # Update stream version
                 await conn.execute(
