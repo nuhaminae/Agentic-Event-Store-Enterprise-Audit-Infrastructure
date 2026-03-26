@@ -75,7 +75,7 @@ class BaseEvent(BaseModel):
     payload: Dict[str, Any]  # still stored as dict for JSONB
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None
-    metadata: Dict[str, str] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     recorded_at: Optional[datetime] = None
 
 
@@ -104,7 +104,7 @@ class StoredEvent(BaseModel):
     event_type: str
     event_version: int
     payload: Dict[str, Any]
-    metadata: Dict[str, str] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
     recorded_at: datetime
     correlation_id: Optional[str] = None
     causation_id: Optional[str] = None
@@ -124,7 +124,7 @@ class StreamMetadata(BaseModel):
     current_version: int
     created_at: datetime
     archived_at: Optional[datetime] = None
-    metadata: Dict[str, str] = Field(default_factory=dict)
+    metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # --- Outbox Status ---
@@ -165,7 +165,7 @@ class ProjectionCheckpoint(BaseModel):
     last_position: int
     updated_at: datetime
     projection_version: int
-    checkpoint_metadata: Dict[str, str] = Field(default_factory=dict)
+    checkpoint_metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 # --- Exceptions ---
