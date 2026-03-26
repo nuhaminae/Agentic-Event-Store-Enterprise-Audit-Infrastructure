@@ -40,26 +40,55 @@ async def test_audit_chain_no_tampering(event_store_dsn):
     """
     ok = await run_integrity_check(event_store_dsn)
     # In environments with pre-existing tampering, just assert the function runs
-    assert isinstance(ok, bool)
+    assert isinstance(ok["integrity_passed"], bool)
 
 
 async def test_audit_chain_tampering(event_store_dsn):
     """
-    Verifies that the audit chain integrity check raises an exception when tampering is present in the event store.
+    Verifies that the audit chain integrity check reports tampering
+    when metadata is corrupted.
 
-    This test is useful for catching regressions in the integrity check code or for verifying that the check raises an exception in environments where tampering is present.
-
-    Test tampering is simulated by manually corrupting metadata for one event. The integrity check is then run and the result is asserted to be False, indicating that tampering was detected.
+    This test inserts a dummy event at the next available stream_position
+    for loan-999, then deliberately corrupts its prev_hash. The integrity
+    check should detect the mismatch and return {"integrity_passed": False}.
     """
     conn = await asyncpg.connect(event_store_dsn)
-    # Manually corrupt metadata for one event
-    await conn.execute(
-        "UPDATE events SET metadata = jsonb_set(metadata,'{prev_hash}','\"bad\"') WHERE global_position=1"
+
+    # Find the next available stream_position for loan-999
+    row = await conn.fetchrow(
+        "SELECT COALESCE(MAX(stream_position), 0) AS max_pos FROM events WHERE stream_id='loan-999'"
     )
+    next_pos = row["max_pos"] + 1
+
+    # Insert a dummy event at that position
+    await conn.execute(
+        """
+        INSERT INTO events (
+            stream_id, stream_position,
+            event_type, event_version, payload, metadata, recorded_at
+        )
+        VALUES (
+            'loan-999', $1,
+            'DummyEvent', 1,
+            '{}',
+            '{"event_hash":"abc","prev_hash":"correct_hash"}',
+            NOW()
+        )
+        """,
+        next_pos,
+    )
+
+    # Corrupt its prev_hash
+    await conn.execute(
+        "UPDATE events SET metadata = jsonb_set(metadata,'{prev_hash}','\"bad\"') "
+        "WHERE stream_id='loan-999' AND stream_position=$1",
+        next_pos,
+    )
+
     await conn.close()
 
     ok = await run_integrity_check(event_store_dsn)
-    assert ok is False
+    assert ok["integrity_passed"] is False
 
 
 async def test_agent_replay_multiple_agents(event_store_dsn):
